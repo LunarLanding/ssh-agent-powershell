@@ -7,6 +7,7 @@
 #
 ############################################################################
 
+#------------------------------------------------------------------------------
 function Start-SshAgent
 {
 	$running = Get-SshAgent
@@ -20,6 +21,9 @@ function Start-SshAgent
 		$parts = $_ -split " "
 		if ($parts[0] -ieq "setenv") {
 			$val = $parts[2] -replace ";$",""
+
+			# This, frustatingly, can be slow. See https://superuser.com/questions/565771/setting-user-environment-variables-is-very-slow
+			# for detailed info.
 			[Environment]::SetEnvironmentVariable($parts[1], $val, "User")
 			[Environment]::SetEnvironmentVariable($parts[1], $val, "Process")
 		} elseif ($parts[0] -ieq "echo") {
@@ -31,30 +35,45 @@ function Start-SshAgent
 	}
 }
 
+#------------------------------------------------------------------------------
 function Get-SshAgent
 {
+	$found = $false
+	# ssh-agent shipped with git now returns a different PID to the actual windows PID. So
+	# we need to do a couple of contortions to make sure that any ssh-agent we find is
+	# owned by the running user.
 	if ($env:SSH_AGENT_PID -ne $null) {
-		$proc = Get-Process -pid $env:SSH_AGENT_PID -ea SilentlyContinue
-		if ($proc -ne $null) {
-			if ($proc.ProcessName -eq "ssh-agent") {
-				$proc
-				return
+		$proc = Get-Process -name ssh-agent -ea SilentlyContinue
+		foreach ($process in $proc) {
+			$id = $process.Id
+			$owner =  (get-wmiobject win32_process -filter "ProcessId = $id").GetOwner()
+			if ($owner.Domain -eq $env:UserDomain -and $owner.User -eq $env:UserName) {
+				$process
+				$found = $true
 			}
 		}
 	}
 
-	[Environment]::SetEnvironmentVariable("SSH_AGENT_PID", $null, "User")
-	[Environment]::SetEnvironmentVariable("SSH_AGENT_PID", $null, "Process")
-	[Environment]::SetEnvironmentVariable("SSH_AUTH_SOCK", $null, "User")
-	[Environment]::SetEnvironmentVariable("SSH_AUTH_SOCK", $null, "Process")
-	$null
+	if (-not $found) {
+		# This, frustatingly, can be slow. See https://superuser.com/questions/565771/setting-user-environment-variables-is-very-slow
+		# for detailed info.
+		[Environment]::SetEnvironmentVariable("SSH_AGENT_PID", $null, "User")
+		[Environment]::SetEnvironmentVariable("SSH_AGENT_PID", $null, "Process")
+		[Environment]::SetEnvironmentVariable("SSH_AUTH_SOCK", $null, "User")
+		[Environment]::SetEnvironmentVariable("SSH_AUTH_SOCK", $null, "Process")
+		$null
+	}
 }
 
+#------------------------------------------------------------------------------
 function Stop-SshAgent
 {
 	$agent = Get-SshAgent
 	if ($agent -ne $null) {
 		stop-process $agent
+
+		# This, frustatingly, can be slow. See https://superuser.com/questions/565771/setting-user-environment-variables-is-very-slow
+		# for detailed info.
 		[Environment]::SetEnvironmentVariable("SSH_AGENT_PID", $null, "User")
 		[Environment]::SetEnvironmentVariable("SSH_AGENT_PID", $null, "Process")
 		[Environment]::SetEnvironmentVariable("SSH_AUTH_SOCK", $null, "User")
