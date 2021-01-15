@@ -80,3 +80,10 @@ function Stop-SshAgent
 		[Environment]::SetEnvironmentVariable("SSH_AUTH_SOCK", $null, "Process")
 	}
 }
+
+function Update-SshAgent
+{
+	[Environment]::SetEnvironmentVariable("SSH_AUTH_SOCK", [Environment]::GetEnvironmentVariable("SSH_AUTH_SOCK","User"), "Process")
+	[Environment]::SetEnvironmentVariable("SSH_AGENT_PID", [Environment]::GetEnvironmentVariable("SSH_AGENT_PID","User"), "Process")
+}
+
